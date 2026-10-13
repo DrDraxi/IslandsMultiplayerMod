@@ -1,0 +1,26 @@
+# Build output
+build/
+Binaries/
+Intermediates/
+*.dll
+*.lib
+*.pdb
+*.ilk
+*.exp
+*.obj
+
+# Logs, dumps, packages
+*.log
+*.dmp
+IslandsMP_Dump_*.txt
+*.zip
+
+# Editor / tools
+.vs/
+.vscode/
+.idea/
+.claude/
+.cursor/
+
+# Packaged releases
+dist/
