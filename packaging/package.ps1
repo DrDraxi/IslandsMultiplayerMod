@@ -27,8 +27,10 @@ $name = if ($Dev) { "IslandsMP-$version-dev" } else { "IslandsMP-$version" }
 
 $stage = Join-Path $OutDir $name
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
-$win64 = New-Item -ItemType Directory -Force (Join-Path $stage "Win64\Mods\IslandsMultiplayerMod\dlls")
-$win64 = Join-Path $stage "Win64"
+# Same layout as the game folder, so the zip is extracted straight into the game's root
+# folder (the one with IslandsofInsight.exe) and everything lands in the right place.
+$null = New-Item -ItemType Directory -Force (Join-Path $stage "IslandsofInsight\Binaries\Win64\Mods\IslandsMultiplayerMod\dlls")
+$win64 = Join-Path $stage "IslandsofInsight\Binaries\Win64"
 
 foreach ($f in 'UE4SS.dll', 'dwmapi.dll') { Copy-Item (Join-Path $Ue4ssDir $f) $win64 }
 Copy-Item $SteamApiDll $win64

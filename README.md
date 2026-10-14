@@ -26,10 +26,9 @@ A UE4SS C++ mod that brings back multiplayer presence to [Islands of Insight](ht
 
 ## Install (players)
 
-1. In Steam, right-click Islands of Insight, then Manage > Browse local files.
-2. Open `IslandsofInsight\Binaries\Win64`.
-3. Copy the contents of the release zip's `Win64` folder there (`dwmapi.dll`, `UE4SS.dll`, `UE4SS-settings.ini`, `steam_api64.dll`, `Mods\`).
-4. Start the game from Steam and pick a mode on the title screen.
+1. In Steam, right-click Islands of Insight, then Manage > Browse local files. This opens the game folder, the one with `IslandsofInsight.exe` in it.
+2. Copy the `IslandsofInsight` folder from the release zip into it, and say yes when Windows asks to merge the folders. The files end up in `IslandsofInsight\Binaries\Win64`, next to `IslandsofInsight-Win64-Shipping.exe`. They don't go in `Engine\Binaries\Win64`.
+3. Start the game from Steam and pick a mode on the title screen.
 
 ### Tip: stop SteamVR from starting
 

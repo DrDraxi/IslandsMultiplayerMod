@@ -3,11 +3,12 @@ Islands of Insight Multiplayer mod {VERSION}
 
 INSTALL
 1. In Steam: right-click Islands of Insight > Manage > Browse local files.
-2. Open IslandsofInsight\Binaries\Win64
-3. Copy everything inside the "Win64" folder of this zip into that folder
-   (dwmapi.dll, UE4SS.dll, UE4SS-settings.ini, steam_api64.dll, Mods\).
-   If Windows asks to replace files, say yes.
-4. Start the game from Steam as usual.
+   That opens the game folder (the one with IslandsofInsight.exe in it).
+2. Copy the "IslandsofInsight" folder from this zip into it, and say yes when
+   Windows asks to merge the folders.
+   The files end up in IslandsofInsight\Binaries\Win64, next to
+   IslandsofInsight-Win64-Shipping.exe. (Not Engine\Binaries\Win64.)
+3. Start the game from Steam as usual.
 
 PLAY TOGETHER (title screen)
 - Everyone needs this same version ({VERSION}).
