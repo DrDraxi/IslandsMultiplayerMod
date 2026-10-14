@@ -38,6 +38,16 @@ The game ships Unreal's OpenXR plugin, which wakes SteamVR at launch if you have
 -nohmd
 ```
 
+### Steam Deck / Linux (Proton)
+
+Proton loads its own `dwmapi.dll` instead of the one that starts UE4SS, so the mod doesn't load. Tell it to use the bundled one with this launch option:
+
+```
+WINEDLLOVERRIDES="dwmapi=n,b" %command%
+```
+
+Thanks to **gameboy7707** for figuring this out.
+
 ## Build (developers)
 
 The mod builds as a UE4SS C++ mod inside an RE-UE4SS checkout.

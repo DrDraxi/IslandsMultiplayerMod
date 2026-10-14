@@ -28,6 +28,11 @@ SteamVR STARTS WITH THE GAME?
 That's the game's own VR plugin, not this mod. Add  -nohmd  to the game's Steam
 launch options (Properties > General > Launch options) to turn it off.
 
+STEAM DECK / LINUX (PROTON)
+Add this to the game's launch options so Proton loads the mod's dwmapi.dll:
+  WINEDLLOVERRIDES="dwmapi=n,b" %command%
+(Thanks to gameboy7707 for figuring this out.)
+
 UNINSTALL
 Delete dwmapi.dll, UE4SS.dll, UE4SS-settings.ini, steam_api64.dll and the Mods
 folder from IslandsofInsight\Binaries\Win64.
