@@ -9,7 +9,7 @@ namespace IslandsMP
 {
     // v2: every packet carries the SteamID of the player it describes, because the host
     // relays client packets and Steam reports the host as the sender of relayed data.
-    constexpr uint8_t PROTOCOL_VERSION = 5;
+    constexpr uint8_t PROTOCOL_VERSION = 6;
 
     enum class MessageType : uint8_t
     {
@@ -17,6 +17,7 @@ namespace IslandsMP
         Appearance  = 0x02, // reliable, on change + every few seconds
         PlayerLeave = 0x03, // reliable, best effort before leaving
         PuzzleCursor = 0x04, // unreliable, ~15 Hz while in a grid puzzle
+        Chat         = 0x05, // reliable, UTF-8 text after the header
     };
 
     enum class AnimState : uint8_t

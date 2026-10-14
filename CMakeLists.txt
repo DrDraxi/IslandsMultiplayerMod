@@ -13,6 +13,7 @@ set(${TARGET}_Sources
     "${CMAKE_CURRENT_SOURCE_DIR}/Appearance.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/UEUtil.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/MainMenu.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Chat.cpp"
 )
 
 add_library(${TARGET} SHARED ${${TARGET}_Sources})

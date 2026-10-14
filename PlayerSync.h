@@ -1,6 +1,7 @@
 #pragma once
 
 #include "NetworkProtocol.h"
+#include <Unreal/UObject.hpp>
 #include "SteamIntegration.h"
 #include <steam/steam_api.h>
 #include <cstdint>
@@ -27,6 +28,11 @@ namespace IslandsMP
     // Title-screen buttons: the session to start once the world has loaded.
     void ChooseSessionFromMenu(SessionMode mode);
     bool IsInWorld();
+
+    // Chat: send a UTF-8 line to everyone in the session (false if not in one).
+    bool SendChat(const std::string& text);
+    std::string LocalDisplayName();
+    RC::Unreal::UObject* LocalPlayerController();
 
     // Debug tools
     void ToggleLoopbackClone();        // puppet driven by our own packets, through the full network path

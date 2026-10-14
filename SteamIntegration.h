@@ -50,6 +50,13 @@ namespace IslandsMP
     const char* GetSessionModeString(SessionMode mode);
     void LeaveLobby();
     void OpenInviteDialog();
+    // Invite button: Steam invite dialog for our lobby; starts a friends session first if needed.
+    void InviteFriends();
+    // "X joined" / "X left" lines (UTF-8) since the last call.
+    std::vector<std::string> TakeSessionEvents();
+    // Players in public sessions running this mod version (title screen). -1 until known.
+    void RefreshPublicPlayerCount();
+    int GetPublicPlayerCount();
     SessionState GetSessionState();
     const char* GetStatusString();
     bool IsHost();

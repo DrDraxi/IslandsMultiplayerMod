@@ -6,6 +6,11 @@
 #include <Unreal/UObject.hpp>
 #include <Unreal/UClass.hpp>
 #include <Unreal/UFunction.hpp>
+#include <Unreal/CoreUObject/UObject/Class.hpp>
+#include <Unreal/CoreUObject/UObject/UnrealType.hpp>
+#include <Unreal/Property/FArrayProperty.hpp>
+#include <Unreal/Property/FStructProperty.hpp>
+#include "SteamIntegration.h"
 #include <cstring>
 #include <vector>
 
@@ -231,10 +236,13 @@ namespace IslandsMP
     {
         UObject* play = ObjProp(menu, L"WBP_PlayGameBarPrimary_Short_1");
         if (!UE::IsLive(play)) return;
+        // "PLAY ONLINE (3)": players in public sessions right now.
+        std::wstring label = kPlayOnline;
+        if (int n = GetPublicPlayerCount(); n >= 0) label += L" (" + std::to_wstring(n) + L")";
         auto* current = Prop<uint8_t>(play, L"In Text");
-        if (current && UE::TextToString(current) == kPlayOnline) return;
-        UE::SetTextProperty(play, L"In Text", kPlayOnline);
-        UE::SetTextBlock(ObjProp(play, L"TextBlock_0"), kPlayOnline);
+        if (current && UE::TextToString(current) == label) return;
+        UE::SetTextProperty(play, L"In Text", label);
+        UE::SetTextBlock(ObjProp(play, L"TextBlock_0"), label);
     }
 
     static std::wstring WidgetText(UObject* w)
@@ -320,9 +328,179 @@ namespace IslandsMP
             friends != nullptr, offline != nullptr, s_hooked);
     }
 
+    // ---- Pause menu: INVITE ---------------------------------------------------------
+    // The pause menu's entries (RESUME, OPTIONS, I'M STUCK, CREDITS) are radio buttons a
+    // RadioSelect builds from its option list. We add one more from a copy of RESUME's option,
+    // so it gets the same look, then move it right under RESUME.
+
+    static constexpr const wchar_t* kPauseConstruct =
+        L"/Game/ASophia/UI/Menus/GameMainMenu/WBP_GameMenuSimplified.WBP_GameMenuSimplified_C:Construct";
+    static constexpr const wchar_t* kPauseSelect =
+        L"/Game/ASophia/UI/Menus/GameMainMenu/WBP_GameMenuSimplified.WBP_GameMenuSimplified_C:HandleSelection";
+    // INVITE carries RESUME's value, so the menu treats it like RESUME and closes (any other
+    // value opens the feedback page). We tell it apart by which button was clicked.
+    static constexpr const wchar_t* kInviteValue = L"RESUME";
+
+    static UE::Handle s_pauseMenu;          // set by the Construct hook
+    static UE::Handle s_inviteButton;       // our INVITE radio button
+    static bool s_pauseConstructed = false; // the menu was (re)built; check INVITE is still there
+    static bool s_pauseHooked = false;
+    static bool s_inviteClicked = false;
+
+    static std::wstring FStringOf(const void* p)
+    {
+        struct Raw { const wchar_t* data; int32_t num; int32_t max; };
+        auto* s = static_cast<const Raw*>(p);
+        return s && s->data && s->num > 1 ? std::wstring(s->data, s->num - 1) : L"";
+    }
+
+    static void InstallPauseHooks()
+    {
+        if (s_pauseHooked) return;
+        if (!UObjectGlobals::StaticFindObject<UFunction*>(nullptr, nullptr, kPauseConstruct)
+            || !UObjectGlobals::StaticFindObject<UFunction*>(nullptr, nullptr, kPauseSelect))
+            return;
+        UObjectGlobals::RegisterHook(StringType(kPauseConstruct),
+            [](UnrealScriptFunctionCallableContext&, void*) {},
+            [](UnrealScriptFunctionCallableContext& ctx, void*) { s_pauseMenu.Set(ctx.Context); s_pauseConstructed = true; }, nullptr);
+        UObjectGlobals::RegisterHook(StringType(kPauseSelect),
+            [](UnrealScriptFunctionCallableContext& ctx, void*) {
+                struct Params { uint8_t value[16]; UObject* selector; };
+                UObject* selector = ctx.GetParams<Params>().selector;
+                UObject* clicked = UE::IsLive(selector) ? ObjProp(selector, L"LatestSelectedRadioButton") : nullptr;
+                if (clicked && s_inviteButton.Is(clicked)) s_inviteClicked = true;
+            },
+            [](UnrealScriptFunctionCallableContext&, void*) {}, nullptr);
+        s_pauseHooked = true;
+        Output::send<LogLevel::Default>(STR("[IslandsMP] Pause menu hooks installed\n"));
+    }
+
+    static void AddInviteToPauseMenu(UObject* menu)
+    {
+        UObject* selector = ObjProp(menu, L"0DefaultSelector");
+        if (!UE::IsLive(selector)) return;
+        // Still in place from last time the menu opened?
+        if (UObject* existing = s_inviteButton.Get())
+        {
+            Call has(ObjProp(selector, L"ButtonContainer"), L"HasChild");
+            has.Arg<UObject*>(0, existing);
+            if (has.Invoke() && has.Ret<bool>()) return;
+        }
+        FProperty* optionsProp = UE::FindProp(selector, L"Options");
+        auto* options = Prop<UE::RawArray>(selector, L"Options");
+        auto* arrayProp = CastField<FArrayProperty>(optionsProp);
+        auto* optionProp = arrayProp ? CastField<FStructProperty>(arrayProp->GetInner()) : nullptr;
+        if (!options || !options->Data || !optionProp) return;
+        UScriptStruct* optionStruct = optionProp->GetStruct();
+        FProperty* valueProp = UE::FindStructMember(optionStruct, L"Value");
+        FProperty* labelProp = UE::FindStructMember(optionStruct, L"Label");
+        FProperty* delimProp = UE::FindStructMember(optionStruct, L"IsDelimiter");
+        if (!valueProp || !labelProp) return;
+
+        // RESUME is the first real (non-delimiter) option.
+        const int32_t stride = optionProp->GetSize();
+        const uint8_t* resume = nullptr;
+        int resumeIndex = -1;
+        std::wstring values;
+        for (int32_t i = 0; i < options->Num; i++)
+        {
+            const uint8_t* opt = options->Data + static_cast<size_t>(i) * stride;
+            std::wstring value = FStringOf(opt + valueProp->GetOffset_Internal());
+            values += value + L" ";
+            bool delim = delimProp && *(opt + delimProp->GetOffset_Internal());
+            if (!resume && !delim) { resume = opt; resumeIndex = i; }
+        }
+        Output::send<LogLevel::Default>(STR("[IslandsMP] Pause menu options: {}\n"), values);
+        if (!resume) return;
+
+        auto** buttonClass = Prop<UObject*>(selector, L"RadioButtonClass");
+        UObject* lib = UE::FindByPath(L"/Script/UMG.Default__WidgetBlueprintLibrary");
+        if (!buttonClass || !*buttonClass || !lib) return;
+        UObject* owner = nullptr;
+        { Call get(menu, L"GetOwningPlayer"); if (get.Invoke()) owner = get.Ret<UObject*>(); }
+        Call create(lib, L"Create");
+        create.Arg<UObject*>(0, selector);
+        create.Arg<UObject*>(1, *buttonClass);
+        create.Arg<UObject*>(2, owner);
+        UObject* button = create.Invoke() ? create.Ret<UObject*>() : nullptr;
+        if (!UE::IsLive(button)) return;
+
+        Call add(selector, L"AddRadioButton");
+        add.Arg<UObject*>(0, button);
+        void* option = add.ArgPtr(1, static_cast<size_t>(stride));
+        if (!option) return;
+        optionProp->CopyCompleteValue(option, resume); // RESUME's icon and style
+        UE::SetFString(static_cast<uint8_t*>(option) + valueProp->GetOffset_Internal(), kInviteValue);
+        {
+            UObject* textLib = UE::FindByPath(L"/Script/Engine.Default__KismetTextLibrary");
+            Call conv(textLib, L"Conv_StringToText");
+            if (conv.ArgString(0, L"INVITE") && conv.Invoke() && conv.RetPtr())
+            {
+                void* label = static_cast<uint8_t*>(option) + labelProp->GetOffset_Internal();
+                labelProp->DestroyValue(label);
+                std::memcpy(label, conv.RetPtr(), 0x18);
+                conv.ForgetRet();
+            }
+        }
+        if (!add.Invoke()) return;
+        s_inviteButton.Set(button);
+
+        // AddRadioButton appends at the bottom; rebuild the button column with INVITE under RESUME.
+        UObject* container = ObjProp(selector, L"ButtonContainer");
+        if (UE::IsLive(container) && ClassOf(container).find(L"Box") != std::wstring::npos)
+        {
+            std::vector<UObject*> kids;
+            std::vector<BoxSlot> looks;
+            Call count(container, L"GetChildrenCount");
+            int n = count.Invoke() ? count.Ret<int32_t>() : 0;
+            for (int i = 0; i < n; i++)
+            {
+                Call at(container, L"GetChildAt");
+                at.Arg<int32_t>(0, i);
+                if (UObject* w = at.Invoke() ? at.Ret<UObject*>() : nullptr) { kids.push_back(w); looks.push_back(ReadSlot(w)); }
+            }
+            // Child order follows the option order (delimiters included), so RESUME's widget is
+            // at resumeIndex.
+            if (!kids.empty() && kids.back() == button && resumeIndex >= 0 && resumeIndex + 1 < static_cast<int>(kids.size()))
+            {
+                BoxSlot inviteLook = looks[resumeIndex];
+                kids.pop_back();
+                looks.pop_back();
+                kids.insert(kids.begin() + resumeIndex + 1, button);
+                looks.insert(looks.begin() + resumeIndex + 1, inviteLook);
+                Call clear(container, L"ClearChildren");
+                clear.Invoke();
+                for (size_t i = 0; i < kids.size(); i++) AddTo(container, kids[i], looks[i]);
+            }
+        }
+        Output::send<LogLevel::Default>(STR("[IslandsMP] Pause menu: INVITE added\n"));
+    }
+
+    static void TickPauseMenu()
+    {
+        static int retry = 0;
+        if (!s_pauseHooked && (++retry % 60) == 0) InstallPauseHooks();
+        UObject* menu = s_pauseMenu.Get();
+        if (menu && s_pauseConstructed)
+        {
+            s_pauseConstructed = false;
+            AddInviteToPauseMenu(menu);
+        }
+        // Open the invite dialog a moment after the menu has closed; opened during the click
+        // the overlay hides again straight away.
+        static int inviteDelay = -1;
+        if (s_inviteClicked)
+        {
+            s_inviteClicked = false;
+            inviteDelay = 20; // frames
+            Output::send<LogLevel::Default>(STR("[IslandsMP] Pause menu: INVITE clicked\n"));
+        }
+        if (inviteDelay >= 0 && inviteDelay-- == 0) InviteFriends();
+    }
+
     void TickMainMenu(float dt)
     {
-        if (IsInWorld()) { s_menu.Reset(); return; }
+        if (IsInWorld()) { s_menu.Reset(); TickPauseMenu(); return; }
 
         UObject* menu = s_menu.Get();
         if (!menu)
@@ -346,6 +524,8 @@ namespace IslandsMP
             s_relabelTimer = 0;
             RelabelPlay(menu);
         }
+        static float countTimer = 30.0f;
+        if ((countTimer += dt) >= 30.0f) { countTimer = 0; RefreshPublicPlayerCount(); }
 
         if (s_clicked)
         {

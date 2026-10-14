@@ -2,6 +2,7 @@
 #include "SteamIntegration.h"
 #include "Appearance.h"
 #include "UEUtil.h"
+#include "Chat.h"
 #include <DynamicOutput/DynamicOutput.hpp>
 #include <Unreal/UObjectGlobals.hpp>
 #include <Unreal/AActor.hpp>
@@ -611,6 +612,16 @@ namespace IslandsMP
             r->cursorTime = Now();
             break;
         }
+        case MessageType::Chat:
+        {
+            if (bodyLen == 0 || bodyLen > 1024) return;
+            std::string text(reinterpret_cast<const char*>(body), bodyLen);
+            auto it = s_remotes.find(origin);
+            std::string name = it != s_remotes.end() && !it->second.appearance.displayName.empty()
+                ? it->second.appearance.displayName : GetPlayerName(origin);
+            ChatShowMessage(name, text);
+            break;
+        }
         case MessageType::PlayerLeave:
         {
             auto it = s_remotes.find(origin);
@@ -1022,6 +1033,8 @@ namespace IslandsMP
 
         PumpLoopback();
         UpdateRemotes(dt);
+        for (const std::string& line : TakeSessionEvents()) ChatSystemLine(line);
+        TickChat(dt);
         static float snapTimer = 0;
         if ((snapTimer += dt) >= 0.1f) { snapTimer = 0; PublishSnapshot(); }
     }
@@ -1034,6 +1047,7 @@ namespace IslandsMP
         s_localPawn.Reset();
         s_worldReadyAt = 1e300;
         UE::ClearCaches();
+        ChatReset();
         for (auto& [id, r] : s_remotes)
         {
             r.actor.Reset();
@@ -1081,6 +1095,24 @@ namespace IslandsMP
     }
 
     bool IsInWorld() { return s_localPawn.Get() != nullptr; }
+
+    UObject* LocalPlayerController() { return s_pc.Get(); }
+
+    std::string LocalDisplayName()
+    {
+        if (!s_localAppearance.displayName.empty()) return s_localAppearance.displayName;
+        return SteamFriends() ? SteamFriends()->GetPersonaName() : "Me";
+    }
+
+    bool SendChat(const std::string& text)
+    {
+        if (GetSessionState() != SessionState::Hosting && GetSessionState() != SessionState::Connected) return false;
+        std::vector<uint8_t> msg(sizeof(MessageHeader) + text.size());
+        WriteHeader(msg.data(), MessageType::Chat, LocalID());
+        std::memcpy(msg.data() + sizeof(MessageHeader), text.data(), text.size());
+        SendToAll(msg.data(), msg.size(), k_nSteamNetworkingSend_Reliable);
+        return true;
+    }
 
     void LeaveSession()
     {

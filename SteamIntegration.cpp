@@ -13,6 +13,8 @@ namespace IslandsMP
     static MessageCallback s_messageCallback;
     static bool s_useNetworkingMessages = false; // true if ISteamNetworkingMessages available
     static SessionMode s_mode = SessionMode::Solo;
+    static std::vector<std::string> s_sessionEvents;
+    static int s_publicPlayers = -1;
     static double s_nextMergeCheck = 0;  // public host alone: look for a busier lobby
     static double s_retrySearchAt = 0;   // public: search again after a failed join
 
@@ -38,11 +40,12 @@ namespace IslandsMP
     }
 
     static constexpr int NET_CHANNEL = 0;
-    static constexpr const char* MOD_VERSION = "0.5.1";
+    static constexpr const char* MOD_VERSION = "0.6.8";
 
     static void RefreshPlayerList();
     static void ProcessIncomingMessages();
     static void JoinLobby(CSteamID lobby);
+    static void InviteIfPending();
     static void CreateLobby(ELobbyType type);
     static void RequestPublicLobbies(bool merge);
 
@@ -78,6 +81,7 @@ namespace IslandsMP
             Output::send<LogLevel::Default>(STR("[IslandsMP] Lobby created! ID: {}. Invite friends via Steam overlay.\n"),
                 std::to_wstring(result->m_ulSteamIDLobby));
             RefreshPlayerList();
+            InviteIfPending();
         }
 
         void OnLobbyEnter(LobbyEnter_t* result, bool ioFailure)
@@ -98,7 +102,7 @@ namespace IslandsMP
             {
                 std::string hv = hostVersion ? hostVersion : "none";
                 Output::send<LogLevel::Warning>(STR("[IslandsMP] Version mismatch (host {}, us {}). Leaving lobby.\n"),
-                    std::wstring(hv.begin(), hv.end()), STR("0.5.1"));
+                    std::wstring(hv.begin(), hv.end()), STR("0.6.8"));
                 SteamMatchmaking()->LeaveLobby(lobbyID);
                 s_state = SessionState::Disconnected;
                 return;
@@ -108,9 +112,15 @@ namespace IslandsMP
             s_isHost = SteamMatchmaking()->GetLobbyOwner(lobbyID) == SteamUser()->GetSteamID();
             s_state = s_isHost ? SessionState::Hosting : SessionState::Connected;
 
+            if (!s_isHost)
+            {
+                std::string host = SteamFriends()->GetFriendPersonaName(SteamMatchmaking()->GetLobbyOwner(lobbyID));
+                s_sessionEvents.push_back("You joined " + host + "'s session");
+            }
             Output::send<LogLevel::Default>(STR("[IslandsMP] Joined lobby! ID: {}\n"),
                 std::to_wstring(result->m_ulSteamIDLobby));
             RefreshPlayerList();
+            InviteIfPending();
         }
 
         // Public lobby search results. merge = we already host a public lobby on our own and
@@ -160,11 +170,33 @@ namespace IslandsMP
         CCallResult<SteamLobbyCallbacks, LobbyCreated_t> m_lobbyCreated;
         CCallResult<SteamLobbyCallbacks, LobbyEnter_t> m_lobbyEntered;
         CCallResult<SteamLobbyCallbacks, LobbyMatchList_t> m_lobbyList;
+
+        // Player count for the title screen: everyone in public lobbies of this version.
+        void OnCountList(LobbyMatchList_t* result, bool ioFailure)
+        {
+            m_countPending = false;
+            if (ioFailure) return;
+            int players = 0;
+            for (uint32 i = 0; i < result->m_nLobbiesMatching; i++)
+                players += SteamMatchmaking()->GetNumLobbyMembers(SteamMatchmaking()->GetLobbyByIndex(static_cast<int>(i)));
+            s_publicPlayers = players;
+        }
+        CCallResult<SteamLobbyCallbacks, LobbyMatchList_t> m_countList;
+        bool m_countPending = false;
         bool m_listIsMerge = false;
 
         STEAM_CALLBACK(SteamLobbyCallbacks, OnLobbyChatUpdate, LobbyChatUpdate_t)
         {
             if (CSteamID(pParam->m_ulSteamIDLobby) != s_lobbyID) return;
+            CSteamID who(pParam->m_ulSteamIDUserChanged);
+            if (who != SteamUser()->GetSteamID())
+            {
+                std::string name = SteamFriends()->GetFriendPersonaName(who);
+                if (pParam->m_rgfChatMemberStateChange & k_EChatMemberStateChangeEntered)
+                    s_sessionEvents.push_back(name + " joined");
+                else
+                    s_sessionEvents.push_back(name + " left");
+            }
             RefreshPlayerList();
             // The host may have left; ownership moves to someone else.
             s_isHost = SteamMatchmaking()->GetLobbyOwner(s_lobbyID) == SteamUser()->GetSteamID();
@@ -323,6 +355,29 @@ namespace IslandsMP
 
     SessionMode GetSessionMode() { return s_mode; }
 
+    void RefreshPublicPlayerCount()
+    {
+        // Don't overlap with a session search (lobby filters are shared per request).
+        if (!s_callbacks || s_callbacks->m_countPending || s_state == SessionState::Searching || !SteamLoggedOn()) return;
+        ISteamMatchmaking* mm = SteamMatchmaking();
+        mm->AddRequestLobbyListStringFilter("mod_name", "IslandsMultiplayerMod", k_ELobbyComparisonEqual);
+        mm->AddRequestLobbyListStringFilter("mod_version", MOD_VERSION, k_ELobbyComparisonEqual);
+        mm->AddRequestLobbyListStringFilter("mode", "public", k_ELobbyComparisonEqual);
+        mm->AddRequestLobbyListDistanceFilter(k_ELobbyDistanceFilterWorldwide);
+        mm->AddRequestLobbyListResultCountFilter(50);
+        s_callbacks->m_countPending = true;
+        s_callbacks->m_countList.Set(mm->RequestLobbyList(), s_callbacks, &SteamLobbyCallbacks::OnCountList);
+    }
+
+    int GetPublicPlayerCount() { return s_publicPlayers; }
+
+    std::vector<std::string> TakeSessionEvents()
+    {
+        std::vector<std::string> out;
+        out.swap(s_sessionEvents);
+        return out;
+    }
+
     const char* GetSessionModeString(SessionMode mode)
     {
         switch (mode)
@@ -351,6 +406,24 @@ namespace IslandsMP
     {
         if (s_lobbyID.IsValid() && SteamFriends())
             SteamFriends()->ActivateGameOverlayInviteDialog(s_lobbyID);
+    }
+
+    // Opened once a lobby exists (InviteFriends started one).
+    static bool s_inviteWhenReady = false;
+
+    void InviteFriends()
+    {
+        if (s_lobbyID.IsValid()) { OpenInviteDialog(); return; }
+        // Solo, or a session that failed: start a friends session, invite when it's up.
+        s_inviteWhenReady = true;
+        if (s_state == SessionState::Disconnected) StartSession(SessionMode::Friends);
+    }
+
+    static void InviteIfPending()
+    {
+        if (!s_inviteWhenReady || !s_lobbyID.IsValid()) return;
+        s_inviteWhenReady = false;
+        OpenInviteDialog();
     }
 
     SessionState GetSessionState() { return s_state; }

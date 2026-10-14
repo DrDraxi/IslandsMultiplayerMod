@@ -9,6 +9,7 @@
 #include "SteamIntegration.h"
 #include "PlayerSync.h"
 #include "MainMenu.h"
+#include "Chat.h"
 #include <steam/steam_api.h>
 #include <cmath>
 #include <functional>
@@ -54,11 +55,14 @@ public:
     IslandsMultiplayerMod() : CppUserModBase()
     {
         ModName = STR("IslandsMultiplayerMod");
-        ModVersion = STR("0.5.1");
+        ModVersion = STR("0.6.8");
         ModDescription = STR("Adds multiplayer presence to Islands of Insight");
         ModAuthors = STR("Draxi");
 
         register_tab(STR("Islands MP"), [](CppUserModBase*) { DrawTab(); });
+        // Enter opens chat (UE4SS key events arrive off the game thread).
+        register_keydown_event(Input::Key::RETURN, [] { Post([] { IslandsMP::ChatOpenRequested(); }); });
+        register_keydown_event(Input::Key::ESCAPE, [] { Post([] { IslandsMP::ChatCancel(); }); });
     }
 
     ~IslandsMultiplayerMod() override
@@ -126,7 +130,7 @@ private:
         using namespace IslandsMP;
         UISnapshot s = GetUISnapshot();
 
-        ImGui::Text("Islands of Insight Multiplayer v0.5.1");
+        ImGui::Text("Islands of Insight Multiplayer v0.6.8");
         ImGui::Separator();
 
         ImGui::Text("Status: %s (%s)", s.status.c_str(), s.mode.c_str());
