@@ -19,6 +19,10 @@ PLAY TOGETHER (title screen)
 You'll see each other with your own customization, name, title and level, on the
 map, and each other's name at the mouse when you're in the same grid puzzle.
 
+IN GAME
+- Chat: Enter to type, Enter to send, Esc to cancel.
+- Pause menu > INVITE opens Steam's invite dialog for your session.
+
 SteamVR STARTS WITH THE GAME?
 That's the game's own VR plugin, not this mod. Add  -nohmd  to the game's Steam
 launch options (Properties > General > Launch options) to turn it off.

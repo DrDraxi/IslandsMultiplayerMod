@@ -13,6 +13,9 @@ A UE4SS C++ mod that brings back multiplayer presence to [Islands of Insight](ht
   - PLAY ONLINE joins a public session with room (up to 10 players), or starts one.
   - PLAY WITH FRIENDS starts a friends-only session; friends join from the Steam friends list or an invite.
   - PLAY OFFLINE plays without a session; Steam invites still work.
+  - PLAY ONLINE also shows how many players are in public sessions right now, e.g. `PLAY ONLINE (3)`.
+- **Chat:** press Enter to type, Enter to send, Esc to cancel. Messages pop up and fade, and the chat box keeps the history. "NAME joined" and "NAME left" lines show when players come and go.
+- **INVITE** in the pause menu opens Steam's invite dialog. If you're playing offline, it starts a friends session first.
 - If Steam is offline (outage, Tuesday maintenance), the session waits and starts once Steam reconnects.
 
 ## Requirements
